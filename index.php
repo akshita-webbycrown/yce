@@ -1,0 +1,203 @@
+<?php
+error_reporting(E_ALL);
+ini_set('display_errors', '1');
+
+// === CONFIG === //
+$client_id = 'EMm6kK7D31vzKrTj6U0FYk4s1rDXqggd';
+
+// Your PRIVATE RSA key (the one that matches your given public key)
+// NEVER share this or commit it in public repos!
+$privateKey = 'MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCTL5BsDxnxF4ALTeHVB9W/IVDaQC4WLBJ+jmcE0ux0zp6UBaCP0mWUxZaAOqZC25eXAt4xMxagcoT6LUfW/sIYPUrdL4JFK/CR/ehMeW7vzzUinXMhTwkHnqbG69K6w90XKqwJNuvVoBYmjMZToUiGk9HitpslYcXkb3aEZwuUqwIDAQAB';
+
+$client_id = "QIEG6bfaEIK6lK6Dd5wtIF0ASsNmF4OE";
+$publicKeyRaw = "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCHWhOiFUt7QPkGFdBoLF75PeIv/KXkUT1V7CAs8RIpBQOtyioqsG8X02tW8UXR5Ef20Ekc5exUUXvyX1qCwOcOGRpQJww8N/vwfyEdY/ihW8dUm/vVj2nHDpuL6yLX5dTFj5cwDxLkuiPQjclBvVUJHMCnofOKqJ1fYHO6XpnK4wIDAQAB";
+
+
+
+
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!isset($_FILES['face_image']) || $_FILES['face_image']['error'] !== UPLOAD_ERR_OK) {
+        die("Image upload failed!");
+    }
+
+    // 2. Generate id_token
+$timestamp = round(microtime(true) * 1000);
+$data = "client_id={$client_id}&timestamp={$timestamp}";
+$pemKey = "-----BEGIN PUBLIC KEY-----\n" .
+chunk_split($publicKeyRaw, 64, "\n") .
+"-----END PUBLIC KEY-----";
+openssl_public_encrypt($data, $encrypted, $pemKey);
+$id_token = base64_encode($encrypted);
+
+    // 2️⃣ Call /client/auth to get access_token
+    $auth = curl_init();
+    curl_setopt_array($auth, [
+        CURLOPT_URL => "https://yce-api-01.perfectcorp.com/s2s/v1.0/client/auth",
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => ["Content-Type: application/json"],
+        CURLOPT_POSTFIELDS => json_encode([
+            'client_id' => $client_id,
+            'id_token' => $id_token
+        ]),
+    ]);
+    $auth_response = curl_exec($auth);
+    if (curl_errno($auth)) {
+        die("❌ Auth cURL error: " . curl_error($auth));
+    }
+    curl_close($auth);
+
+    $auth_data = json_decode($auth_response, true);
+    if (json_last_error() !== JSON_ERROR_NONE) {
+        die("❌ JSON decode error: " . json_last_error_msg());
+    }
+
+    if (!isset($auth_data['result']['access_token'])) {
+        die("<h3>❌ Auth failed:</h3><pre>" . htmlspecialchars($auth_response) . "</pre>");
+    }
+
+    $access_token = $auth_data['result']['access_token'];
+    echo "<h3>✅ Step 1: Got Access Token</h3><pre>" . htmlspecialchars($auth_response) . "</pre>";
+
+      // ✅ 3️⃣ Upload file (make sure field name is `file`, not `files`)
+    $tmpPath = $_FILES['face_image']['tmp_name'];
+    $fileName = $_FILES['face_image']['name'];
+
+    if (!is_uploaded_file($tmpPath) || filesize($tmpPath) === 0) {
+        die("❌ Uploaded file invalid or empty.");
+    }
+    // === 2. Create CURLFile ===
+    // Force mime type if needed (jpeg/png)
+    $mimeType = mime_content_type($tmpPath);
+    if ($mimeType === false) {
+        $mimeType = 'image/jpeg'; // fallback
+    }
+   // echo $mimeType;
+    echo "<pre>File Name: $fileName</pre>";
+    echo "<pre>MIME Type: $mimeType</pre>";
+    echo "<pre>File Size: " . filesize($tmpPath) . "</pre>";
+    $cfile = new CURLFile($tmpPath, $mimeType, $fileName);
+
+    $metadata = [
+        [
+            'content_type' => $mimeType,
+            'file_name' => $fileName,
+            'file_size' => filesize($tmpPath)
+        ]
+    ];
+
+    $postfields = [
+        'file' => $cfile,
+        'files' => json_encode($metadata)
+    ];
+
+    $upload = curl_init();
+    curl_setopt_array($upload, [
+        CURLOPT_URL => "https://yce-api-01.perfectcorp.com/s2s/v1.1/file/skin-analysis",
+  CURLOPT_RETURNTRANSFER => true,
+  CURLOPT_ENCODING => "",
+  CURLOPT_MAXREDIRS => 10,
+  CURLOPT_TIMEOUT => 30,
+  CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+  CURLOPT_CUSTOMREQUEST => "POST",
+  CURLOPT_POSTFIELDS => json_encode([
+    'files' => $metadata
+  ]),
+  CURLOPT_HTTPHEADER => [
+    "Authorization: Bearer ".$access_token,
+    "content-type: application/json"
+  ],
+    ]);
+    $upload_response = curl_exec($upload);
+    if (curl_errno($upload)) {
+        echo "<pre>cURL error: " . curl_error($upload) . "</pre>";
+    }
+    //echo "<pre>cURL info: " . print_r(curl_getinfo($upload), true) . "</pre>";
+    curl_close($upload);
+
+    $upload_data = json_decode($upload_response, true);
+    if (json_last_error() !== JSON_ERROR_NONE) {
+        die("❌ JSON decode error: " . json_last_error_msg());
+    }
+    if( isset($upload_data['result']) ){
+        $upload_data = $upload_data['result'];
+    }
+
+    if (!isset($upload_data['files'])) {
+        die("<h3>❌ Upload failed:</h3><pre>" . htmlspecialchars($upload_response) . "</pre>");
+    }
+
+    $src_id = '';
+    if ( isset($upload_data['files']) ){
+        $src_id = $upload_data['files'][0]['file_id'];
+    }
+    echo "<h3>✅ Step 2: File Uploaded</h3><pre>" . htmlspecialchars($upload_response) . "</pre>";
+
+    echo '<pre>';
+    //print_r($upload_data);
+    echo '</pre>';
+
+    // 4️⃣ Run the task
+    $task = curl_init();
+    $task_payload = [
+        'request_id' => 1,
+        'payload' => [
+            'file_sets' => [
+                'src_ids' => [ $src_id ]
+            ],
+            'actions' => [
+                [
+                                'id' => 1,
+                                'params' => [
+                                             'src_id' => $src_id,
+                    'face_mode' => 'hd'                     
+                                ],
+                                'dst_actions' => [
+                                                                'hd_wrinkle',
+                                                                'hd_pore',
+                                                                'hd_texture',
+                                                                'hd_acne'
+                                ]
+                ]
+            ]
+        ]
+    ];
+    echo '<pre>';
+    //print_r($task_payload);
+    echo '</pre>';
+    curl_setopt_array($task, [
+        CURLOPT_URL => "https://yce-api-01.perfectcorp.com/s2s/v1.0/task/skin-analysis",
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => [
+            "Authorization: Bearer $access_token",
+            "Content-Type: application/json"
+        ],
+        CURLOPT_POSTFIELDS => json_encode($task_payload)
+    ]);
+    $task_response = curl_exec($task);
+    if (curl_errno($task)) { die("Task cURL error: " . curl_error($task)); }
+    curl_close($task);
+
+    echo "<h3>✅ Step 3: Task Result</h3><pre>" . htmlspecialchars($task_response) . "</pre>";
+    exit;
+}
+?>
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>PerfectCorp Face Analysis — Full Flow</title>
+</head>
+<body>
+    <h2>Upload an image for Face Attribute Analysis</h2>
+    <form method="POST" enctype="multipart/form-data">
+        <label>Select an image:</label>
+        <input type="file" name="face_image" accept="image/*" required>
+        <br><br>
+        <button type="submit">Analyze</button>
+    </form>
+</body>
+</html>
