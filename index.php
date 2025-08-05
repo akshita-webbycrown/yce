@@ -1,4 +1,5 @@
 <?php
+session_start();
 error_reporting(E_ALL);
 ini_set('display_errors', '1');
 
@@ -20,44 +21,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!isset($_FILES['face_image']) || $_FILES['face_image']['error'] !== UPLOAD_ERR_OK) {
         die("Image upload failed!");
     }
-
     // 2. Generate id_token
-$timestamp = round(microtime(true) * 1000);
-$data = "client_id={$client_id}&timestamp={$timestamp}";
-$pemKey = "-----BEGIN PUBLIC KEY-----\n" .
-chunk_split($publicKeyRaw, 64, "\n") .
-"-----END PUBLIC KEY-----";
-openssl_public_encrypt($data, $encrypted, $pemKey);
-$id_token = base64_encode($encrypted);
+    $timestamp = round(microtime(true) * 1000);
+    $data = "client_id={$client_id}&timestamp={$timestamp}";
+    $pemKey = "-----BEGIN PUBLIC KEY-----\n" .
+    chunk_split($publicKeyRaw, 64, "\n") .
+    "-----END PUBLIC KEY-----";
+    openssl_public_encrypt($data, $encrypted, $pemKey);
+    $id_token = base64_encode($encrypted);
+    
+        // 2️⃣ Call /client/auth to get access_token
+        $auth = curl_init();
+        curl_setopt_array($auth, [
+            CURLOPT_URL => "https://yce-api-01.perfectcorp.com/s2s/v1.0/client/auth",
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST => true,
+            CURLOPT_HTTPHEADER => ["Content-Type: application/json"],
+            CURLOPT_POSTFIELDS => json_encode([
+                'client_id' => $client_id,
+                'id_token' => $id_token
+            ]),
+        ]);
+        $auth_response = curl_exec($auth);
+        if (curl_errno($auth)) {
+            die("❌ Auth cURL error: " . curl_error($auth));
+        }
+        curl_close($auth);
+    
+        $auth_data = json_decode($auth_response, true);
+    
+        print_r($auth_data);
+    
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            die("❌ JSON decode error: " . json_last_error_msg());
+        }
+    
+        if (!isset($auth_data['result']['access_token'])) {
+            die("<h3>❌ Auth failed:</h3><pre>" . htmlspecialchars($auth_response) . "</pre>");
+        }
+    
+        $access_token = $auth_data['result']['access_token'];
 
-    // 2️⃣ Call /client/auth to get access_token
-    $auth = curl_init();
-    curl_setopt_array($auth, [
-        CURLOPT_URL => "https://yce-api-01.perfectcorp.com/s2s/v1.0/client/auth",
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_POST => true,
-        CURLOPT_HTTPHEADER => ["Content-Type: application/json"],
-        CURLOPT_POSTFIELDS => json_encode([
-            'client_id' => $client_id,
-            'id_token' => $id_token
-        ]),
-    ]);
-    $auth_response = curl_exec($auth);
-    if (curl_errno($auth)) {
-        die("❌ Auth cURL error: " . curl_error($auth));
-    }
-    curl_close($auth);
-
-    $auth_data = json_decode($auth_response, true);
-    if (json_last_error() !== JSON_ERROR_NONE) {
-        die("❌ JSON decode error: " . json_last_error_msg());
-    }
-
-    if (!isset($auth_data['result']['access_token'])) {
-        die("<h3>❌ Auth failed:</h3><pre>" . htmlspecialchars($auth_response) . "</pre>");
-    }
-
-    $access_token = $auth_data['result']['access_token'];
     echo "<h3>✅ Step 1: Got Access Token</h3><pre>" . htmlspecialchars($auth_response) . "</pre>";
 
       // ✅ 3️⃣ Upload file (make sure field name is `file`, not `files`)
@@ -180,9 +184,48 @@ $id_token = base64_encode($encrypted);
     if (curl_errno($task)) { die("Task cURL error: " . curl_error($task)); }
     curl_close($task);
 
-    echo "<h3>✅ Step 3: Task Result</h3><pre>" . htmlspecialchars($task_response) . "</pre>";
-    exit;
+    // Assign status to $task_status
+    $task_response_data = json_decode($task_response, true);
+    $task_status = isset($task_response_data['status']) ? $task_response_data['status'] : null;
+
+    // Store task_id and task_type in session if status is 200
+    if ($task_status == 200) {
+        $task_id = $task_response_data['result']['task_id'] ?? null;
+        $task_type = 'skin-analysis'; // Set your task type here
+        if ($task_id && !empty($task_type)) {
+            if (session_status() == PHP_SESSION_NONE) {
+                session_start();
+            }
+            if (!isset($_SESSION['_tasks'])) {
+                $_SESSION['_tasks'] = [];
+            }
+            $_SESSION['_tasks'][] = [
+                'task_id' => $task_id,
+                'task_type' => $task_type,
+                'task_status' => 0,
+                'task_status_last_checked' => time(),
+                'task_status_label' => 'Pending',
+                'task_response' => ''
+            ];
+
+            if (isset($_SESSION['_tasks'])) {
+              //print_r($_SESSION['_tasks']);
+          } else {
+              //echo 'No tasks in session.';
+          }
+        }
+    }
+
+    //echo "<h3>✅ Step 3: Task Result</h3><pre>" . htmlspecialchars($task_response) . "</pre>";
+    ?>
+
+
+<?php
+  //  exit;
 }
+
+
+
 ?>
 
 <!DOCTYPE html>
@@ -192,6 +235,15 @@ $id_token = base64_encode($encrypted);
     <title>PerfectCorp Face Analysis — Full Flow</title>
 </head>
 <body>
+<pre>
+<?php
+if (isset($_SESSION['_tasks'])) {
+    //print_r($_SESSION['_tasks']);
+} else {
+   // echo 'No tasks in session.';
+}
+?>
+</pre>
     <h2>Upload an image for Face Attribute Analysis</h2>
     <form method="POST" enctype="multipart/form-data">
         <label>Select an image:</label>
@@ -199,5 +251,37 @@ $id_token = base64_encode($encrypted);
         <br><br>
         <button type="submit">Analyze</button>
     </form>
+<div id="result"></div>
+<script>
+function checkTasks() {
+    fetch('check_tasks.php')
+        .then(response => response.json())
+        .then(data => {
+            const tasks = data.tasks || [];
+            let html = '';
+            if (tasks.length > 0) {
+                html += '<table border="1" cellpadding="5" cellspacing="0">';
+                html += '<tr><th>#</th><th>Task ID</th><th>Type</th><th>Status</th><th>Status Label</th><th>Last Checked</th><th>Response</th></tr>';
+                tasks.forEach((task, idx) => {
+                    html += `<tr>
+                        <td>${idx + 1}</td>
+                        <td>${task.task_id || ''}</td>
+                        <td>${task.task_type || ''}</td>
+                        <td>${task.task_status}</td>
+                        <td>${task.task_status_label}</td>
+                        <td>${task.task_status_last_checked}</td>
+                        <td><pre style="white-space:pre-wrap;max-width:300px;overflow:auto;">${task.task_response ? (typeof task.task_response === 'string' ? task.task_response : JSON.stringify(task.task_response, null, 2)) : ''}</pre></td>
+                    </tr>`;
+                });
+                html += '</table>';
+            } else {
+                html = '<em>No tasks found.</em>';
+            }
+            document.getElementById('result').innerHTML = html;
+        });
+}
+setInterval(checkTasks, 10000);
+checkTasks();
+</script>
 </body>
 </html>
