@@ -232,7 +232,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>PerfectCorp Face Analysis — Full Flow t</title>
+    <title>PerfectCorp Face Analysis — Full Flow tes</title>
 </head>
 <body>
 <pre>
@@ -244,7 +244,7 @@ if (isset($_SESSION['_tasks'])) {
 }
 ?>
 </pre>
-    <h2>Upload an image for Face Attribute Analysis fsd</h2>
+    <h2>Upload an image for Face Attribute Analysis s</h2>
     <form method="POST" enctype="multipart/form-data">
         <label>Select an image:</label>
         <input type="file" name="face_image" accept="image/*" required>
