@@ -189,6 +189,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     echo '<pre>';
     print_r( $task_response_data );
     echo '<pre>';
+    die();
     $task_status = isset($task_response_data['status']) ? $task_response_data['status'] : null;
 
     // Store task_id and task_type in session if status is 200
