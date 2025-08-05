@@ -186,6 +186,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Assign status to $task_status
     $task_response_data = json_decode($task_response, true);
+    print_r( $task_response_data );
     $task_status = isset($task_response_data['status']) ? $task_response_data['status'] : null;
 
     // Store task_id and task_type in session if status is 200
