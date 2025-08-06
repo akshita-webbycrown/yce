@@ -2,6 +2,7 @@
 session_start();
 header('Content-Type: application/json');
 
+
 if (!isset($_SESSION['_tasks'])) {
     //echo json_encode(['tasks' => []]);
     echo 'No tasks in session.';
@@ -65,9 +66,10 @@ foreach ($_SESSION['_tasks'] as $i => &$task) {
     
     if ($task['task_status'] == 0 && !empty($task['task_id'])) {
         $task_id = urlencode($task['task_id']);
+        $task_type = urlencode($task['task_type']);
         $curl = curl_init();
         curl_setopt_array($curl, [
-            CURLOPT_URL => "https://yce-api-01.perfectcorp.com/s2s/v1.0/task/skin-analysis?task_id=$task_id",
+            CURLOPT_URL => "https://yce-api-01.perfectcorp.com/s2s/v1.0/task/$task_type?task_id=$task_id",
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_ENCODING => "",
             CURLOPT_MAXREDIRS => 10,
@@ -90,7 +92,7 @@ foreach ($_SESSION['_tasks'] as $i => &$task) {
             if (isset($response_data['status']) && $response_data['status'] == 200) {
                // $task['task_status'] = 1; // Mark as done
                 $task['task_status_label'] = $response_data['result']['status'];
-                if ( $response_data['result']['status'] == 'success' ) {
+                if ( $response_data['result']['status'] == 'success' || $response_data['result']['status'] == 'error' ) {
                     $task['task_status'] = 1;
                 } else {
                     $task['task_status'] = 0;

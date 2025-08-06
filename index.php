@@ -21,6 +21,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!isset($_FILES['face_image']) || $_FILES['face_image']['error'] !== UPLOAD_ERR_OK) {
         die("Image upload failed!");
     }
+    $task_type = $_POST['task_type'] ?? 'skin-analysis';
     // 2. Generate id_token
     $timestamp = round(microtime(true) * 1000);
     $data = "client_id={$client_id}&timestamp={$timestamp}";
@@ -50,7 +51,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
         $auth_data = json_decode($auth_response, true);
     
-        print_r($auth_data);
+        //print_r($auth_data);
     
         if (json_last_error() !== JSON_ERROR_NONE) {
             die("❌ JSON decode error: " . json_last_error_msg());
@@ -98,7 +99,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $upload = curl_init();
     curl_setopt_array($upload, [
-        CURLOPT_URL => "https://yce-api-01.perfectcorp.com/s2s/v1.1/file/skin-analysis",
+        CURLOPT_URL => "https://yce-api-01.perfectcorp.com/s2s/v1.1/file/$task_type",
   CURLOPT_RETURNTRANSFER => true,
   CURLOPT_ENCODING => "",
   CURLOPT_MAXREDIRS => 10,
@@ -144,6 +145,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // 4️⃣ Run the task
     $task = curl_init();
+    $task_payload = [];
+
+    if ( $task_type == 'skin-analysis' ) {
     $task_payload = [
         'request_id' => 1,
         'payload' => [
@@ -167,11 +171,69 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]
         ]
     ];
-    echo '<pre>';
-    //print_r($task_payload);
-    echo '</pre>';
+    }
+
+    if ( $task_type == 'face-attr-analysis' ) {
+        $task_payload = [
+            'request_id' => 1,
+            'payload' => [
+                'file_sets' => [
+                    'src_ids' => [ $src_id ]
+                ],
+                'actions' => [
+                    [
+                        'id' => 0,
+                        'params' => [
+                            'face_angle_strictness_level' => 'medium', // or 'strict', 'medium', etc.
+                            'features' => [
+                                "eyeShape", "eyeSize", "eyeAngle", "eyeDistance", "eyelid"
+                            ]
+                        ]
+                    ]
+                ]
+            ]
+        ];
+    }
+
+    if ( $task_type == 'hair-color' ) {
+        $task_payload = [
+            'request_id' => 1,
+            'payload' => [
+                'file_sets' => [
+                    'src_ids' => [ $src_id ]
+                ],
+                'actions' => [
+                    [
+                        'id' => 0,
+                        'params' => [
+                            'pattern' => [
+                                'name' => 'ombre',
+                                'blend_strength' => 80,
+                                'line_offset' => 0.2,
+                                'coloring_section' => 'top'
+                            ],
+                            'palettes' => [
+                                [
+                                    'color' => '#FF0000',
+                                    'color_intensity' => 80,
+                                    'shine_intensity' => 60
+                                ],
+                                [
+                                    'color' => '#0000FF',
+                                    'color_intensity' => 70,
+                                    'shine_intensity' => 50
+                                ]
+                            ]
+                        ]
+                    ]
+                ]
+            ]
+        ];
+    }
+
+    
     curl_setopt_array($task, [
-        CURLOPT_URL => "https://yce-api-01.perfectcorp.com/s2s/v1.0/task/skin-analysis",
+        CURLOPT_URL => "https://yce-api-01.perfectcorp.com/s2s/v1.0/task/$task_type",
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST => true,
         CURLOPT_HTTPHEADER => [
@@ -191,7 +253,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Store task_id and task_type in session if status is 200
     if ($task_status == 200) {
         $task_id = $task_response_data['result']['task_id'] ?? null;
-        $task_type = 'skin-analysis'; // Set your task type here
+        //$task_type = 'skin-analysis'; // Set your task type here
         if ($task_id && !empty($task_type)) {
             if (session_status() == PHP_SESSION_NONE) {
                 session_start();
@@ -216,7 +278,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    echo "<h3>✅ Step 3: Task Result</h3><pre>" . htmlspecialchars($task_response) . "</pre>";
+    echo "<h3>✅ Step 3: Task Result</h3><pre>";
+    echo '<pre>';
+    print_r($task_payload);
+    echo '</pre>';
+    echo '<pre>';
+    print_r($task_response);
+    echo '</pre>';
+    echo "</pre>";
     ?>
 
 
@@ -232,7 +301,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>PerfectCorp Face Analysis — Full Flow tes</title>
+    <title>PerfectCorp Face Analysis — Full Flow</title>
 </head>
 <body>
 <pre>
@@ -244,8 +313,15 @@ if (isset($_SESSION['_tasks'])) {
 }
 ?>
 </pre>
-    <h2>Upload an image for Face Attribute Analysis s</h2>
+    <h2>Upload an image for Face Attribute Analysis</h2>
     <form method="POST" enctype="multipart/form-data">
+        <label>Select a task type:</label>
+        <select name="task_type">
+            <option value="skin-analysis">Skin Analysis</option>
+            <option value="face-attr-analysis">Face Attribute Analysis</option>
+            <option value="hair-color">Hair Color</option>
+        </select>
+        <br><br>
         <label>Select an image:</label>
         <input type="file" name="face_image" accept="image/*" required>
         <br><br>
